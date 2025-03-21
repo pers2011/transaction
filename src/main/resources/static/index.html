@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- 保持原有样式不变 -->
+    <style>
+
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; }
+        .transaction-form { margin-bottom: 30px; background: #f5f5f5; padding: 20px; border-radius: 8px; }
+        .form-row { margin-bottom: 15px; }
+        label { display: inline-block; width: 120px; }
+        input, select { padding: 8px; width: 250px; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .transaction-list { margin-top: 20px; }
+        .transaction-item {
+            background: #fff;
+            padding: 15px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .error { color: red; margin-top: 5px; }
+        pagination {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .page-info {
+            margin: 0 15px;
+        }
+        .pagination button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+<h1>Transaction Management</h1>
+
+<!-- 使用标准form元素 -->
+<form class="transaction-form" id="createForm" onsubmit="handleSubmit(event)">
+    <h2>Create New Transaction</h2>
+    <div id="error-message" class="error"></div>
+
+    <div class="form-row">
+        <label for="id">ID:</label>
+        <input type="text" id="id" name="id" required>
+    </div>
+    <div class="form-row">
+        <label for="description">Description:</label>
+        <input type="text" id="description" name="description" required>
+    </div>
+    <div class="form-row">
+        <label for="amount">Amount:</label>
+        <input type="number" id="amount" name="amount" step="0.01" min="0.01" required>
+    </div>
+    <div class="form-row">
+        <label for="type">Type:</label>
+        <select id="type" name="type" required>
+            <option value="">Select Type</option>
+            <option value="cash">cash</option>
+            <option value="stock">stock</option>
+        </select>
+    </div>
+    <button type="submit">Create Transaction</button>
+</form>
+
+<!-- 交易列表 -->
+<div class="transaction-list">
+    <h2>Transaction List</h2>
+    <div id="transactions-container"></div>
+    <div class="pagination">
+        <button id="prev-page" onclick="changePage(-1)">Previous</button>
+        <span id="page-info" class="page-info">Page 1 of 1</span>
+        <button id="next-page" onclick="changePage(1)">Next</button>
+    </div>
+</div>
+
+<script>
+    // 分页状态管理
+       let pagination = {
+           currentPage: 1,
+           pageSize: 5,  // 每页显示数量
+           totalPages: 1,
+           totalItems: 0
+       };
+    // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTransactions();
+        });
+
+
+   // 表单提交处理
+   async function handleSubmit(event) {
+       event.preventDefault(); // 阻止默认提交行为
+
+       const formData = new FormData(event.target);
+       const transaction = {
+           id: formData.get('id'),
+           description: formData.get('description'),
+           amount: parseFloat(formData.get('amount')),
+           type: formData.get('type')
+       };
+
+       try {
+           const response = await fetch('/api/transactions', {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify(transaction)
+           });
+
+           if (!response.ok) {
+               const error = await response.json();
+               showError(error.error);
+               return;
+           }
+
+           // 清空表单并刷新列表
+           event.target.reset();
+           loadTransactions();
+       } catch (error) {
+           showError('Failed to create transaction');
+       }
+   }
+
+       // 增强的删除功能（自动调整分页）
+        async function deleteTransaction(id) {
+            if (!confirm('Are you sure you want to delete this transaction?')) return;
+
+            try {
+                const response = await fetch(`/api/transactions/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) throw new Error('Delete failed');
+
+                // 如果当前页最后一条被删除且不是第一页，回到前一页
+                if (pagination.totalItems % pagination.pageSize === 1 &&
+                    pagination.currentPage > 1) {
+                    pagination.currentPage--;
+                }
+
+                loadTransactions();
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+      // 加载交易列表
+      async function loadTransactions() {
+            try {
+                const url = `/api/transactions?page=${pagination.currentPage}&size=${pagination.pageSize}`;
+                const response = await fetch(url);
+                const respJson = await response.json();
+                const data = respJson.result;
+                // 假设后端返回结构 { total, transactions }
+                pagination.totalItems = data.totalElements;
+                pagination.totalPages = data.totalPages;
+
+                renderTransactions(data.content);
+                updatePaginationControls();
+            } catch (error) {
+                showError('Failed to load transactions');
+            }
+        }
+
+         // 增强后的渲染函数
+        function renderTransactions(transactions) {
+            const container = document.getElementById('transactions-container');
+            if (transactions.length === 0) {
+                container.innerHTML = '<div class="transaction-item">No transactions found</div>';
+                return;
+            }
+
+            container.innerHTML = transactions.map(transaction => `
+                <div class="transaction-item">
+                    <div>
+                        <strong>${transaction.description}</strong><br>
+                        ID: ${transaction.id} |
+                        Amount: $${transaction.amount} |
+                        Type: ${transaction.type}
+                    </div>
+                    <button onclick="deleteTransaction('${transaction.id}')">Delete</button>
+                </div>
+            `).join('');
+        }
+        // 新增分页控制函数
+        function updatePaginationControls() {
+            document.getElementById('page-info').textContent =
+                `Page ${pagination.currentPage} of ${pagination.totalPages}`;
+
+            document.getElementById('prev-page').disabled = pagination.currentPage === 1;
+            document.getElementById('next-page').disabled =
+                pagination.currentPage === pagination.totalPages;
+        }
+
+        // 分页切换函数
+        function changePage(step) {
+            const newPage = pagination.currentPage + step;
+            if (newPage > 0 && newPage <= pagination.totalPages) {
+                pagination.currentPage = newPage;
+                loadTransactions();
+            }
+        }
+
+       // 显示错误信息
+       function showError(message) {
+           const errorDiv = document.getElementById('error-message');
+           errorDiv.textContent = message;
+           setTimeout(() => errorDiv.textContent = '', 3000);
+       }
+</script>
+</body>
+</html>
