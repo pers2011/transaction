@@ -4,3 +4,5 @@
 ## mvn package
 ## docker build -t bank-app .
 ## docker run -p 8888:8888 bank-app
+
+### 测试报告见 test-report.docx
